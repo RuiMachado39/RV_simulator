@@ -1,3 +1,4 @@
+from _typeshed import Self
 import struct
 import glob
 from elftools.elf.elffile import ELFFile
@@ -5,6 +6,21 @@ from enum import Enum
 
 #register file CPU is 32 bits
 regfile = [0]*33
+class Regfile:
+    def __init__(self):
+        self.regs = [0]*33
+    
+    def __getitem__(self, index):
+        return self.regs[index]
+
+    def __setitem__(self, index, value):
+        if index == 0:
+            return
+        else:
+            Self.regs[index] = value
+
+
+regfile = Regfile()    
 PC = 32
 
 class Opcode(Enum):
@@ -14,10 +30,23 @@ class Opcode(Enum):
     BRANCH = 0b1100111
     LOAD = 0b0000011
     STORE = 0b0100011
-    ALUI = 0b0010011
-    ALUR = 0b0110011
-    FENCE = 0b0001111
+    ALUI = 0b0010011 #IMM
+    ALUR = 0b0110011 #OP
+    MISC = 0b0001111 #FENCE instructions
     SYSTEM = 0b1110011
+
+
+class Func3(Enum):
+    ADDI = 0b000 #also ADD, SUB
+    SLTI = 0b010  #also SLT
+    SLTIU = 0b011 #also SLTU
+    XORI = 0b100 #also XOR
+    ORI = 0b110 #also OR
+    ANDI = 0b111 #also AND
+    SLLI = 0b001 #also SLL
+    SRLI = 0b101 #also SRAI, SRL, SRA 
+
+
 
 def decode(ins, msb, lsb):
     return (ins >> lsb) & ((1 << (msb - lsb + 1))-1)
@@ -45,11 +74,39 @@ def step():
     #instruction decode
     op = Opcode(decode(ins,6,0))
     if Opcode.JAL == op:
+        #J-type instruction
         imm = decode(ins,31,12) #TO DO: change decode of the immediate, bits in JAL come not ordered!!!
         rd = decode(ins, 11,7)
-        assert rd == 0
-
+        offset = decode(imm, 31,30) << 20 | decode(imm, 19,12) << 12 | decode(imm, 21, 20) << 11 | decode(imm, 30, 21) << 1 
+        regfile[PC] += offset
+        return True
+    elif op == Opcode.AUIPC:
+        rd = decode(ins, 11, 7)
+        imm = decode(ins, 31, 12)
+        regfile[rd] = regfile[PC] + imm
+        return True
+    elif op == Opcode.ALUI:
+        #I-type instruction
+        rd = decode(ins, 11, 7)
+        rs1 = decode(ins, 19, 15)
+        func3 = Func3(decode(ins, 14, 12))
+        imm = decode(ins, 31, 20)
+        if func3 == Func3.ADDI:
+            regfile[rd] = regfile[rs1] + imm
+        if func3 == Func3.SLLI:
+            regfile[rd] = regfile[rs1] << imm
+        else:
+            dump()
+            raise Exception("Func3 error - Unknown func3 field")
+        regfile[PC] += 4
+        return True
+    elif op == Opcode.SYSTEM:
         pass
+    else:
+        dump()
+        raise Exception("Opcode error - Unknown opcode")
+
+
 
     print(hex(ins), op)
     dump()
