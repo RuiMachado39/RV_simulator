@@ -1,4 +1,5 @@
 from _typeshed import Self
+from os import truncate
 import struct
 import glob
 from elftools.elf.elffile import ELFFile
@@ -17,7 +18,7 @@ class Regfile:
         if index == 0:
             return
         else:
-            Self.regs[index] = value
+            Self.regs[index] = value & 0xFFFFFFFF
 
 
 regfile = Regfile()    
@@ -48,6 +49,7 @@ class Func3(Enum):
 
 
 
+
 def decode(ins, msb, lsb):
     return (ins >> lsb) & ((1 << (msb - lsb + 1))-1)
 
@@ -73,7 +75,7 @@ def step():
     ins = r32(regfile[PC])
     #instruction decode
     op = Opcode(decode(ins,6,0))
-    if Opcode.JAL == op:
+    if op == Opcode.JAL:
         #J-type instruction
         imm = decode(ins,31,12) #TO DO: change decode of the immediate, bits in JAL come not ordered!!!
         rd = decode(ins, 11,7)
@@ -85,6 +87,14 @@ def step():
         imm = decode(ins, 31, 12)
         regfile[rd] = regfile[PC] + imm
         return True
+    elif op == Opcode.ALUR:
+        #R-type instruction
+        rd = decode(ins, 11, 7)
+        rs1 = decode(ins, 19, 15)
+        rs2 = decode(ins, 24, 20)
+        func7 = decode(ins, 31, 25)
+        func3 = Func3(decode(ins,14, 12))
+        return True
     elif op == Opcode.ALUI:
         #I-type instruction
         rd = decode(ins, 11, 7)
@@ -93,7 +103,7 @@ def step():
         imm = decode(ins, 31, 20)
         if func3 == Func3.ADDI:
             regfile[rd] = regfile[rs1] + imm
-        if func3 == Func3.SLLI:
+        elif func3 == Func3.SLLI:
             regfile[rd] = regfile[rs1] << imm
         else:
             dump()
