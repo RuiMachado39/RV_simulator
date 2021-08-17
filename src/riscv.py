@@ -88,10 +88,8 @@ def r32(addr):
 
 
 def sign_extend(value, bits):
-    if value >> (bits-1) == 1:
-        return -(1 << bits) - value
-    else:
-        return value 
+    sign_bit = 1 << (bits - 1)
+    return (value & (sign_bit - 1)) - (value & sign_bit)
 
 def dump():
     pp = []
@@ -124,8 +122,9 @@ def step():
         assert func3 == Func3.ADDI #Func3 field must be 0 on JALR instructions which is the ADDI/ADD code
         rs1 = decode(ins, 19, 15)
         imm = sign_extend(decode(ins, 31, 20), 12)
-        regfile[rd] = regfile[PC] + 4
+        nv = regfile[PC] + 4 
         regfile[PC] = regfile[rs1] + imm
+        regfile[rd] = nv
         return True
     elif op == Opcode.LUI:
         rd = decode(ins, 11, 7)
@@ -135,7 +134,7 @@ def step():
         #U-type instruction
         rd = decode(ins, 11, 7)
         imm = decode(ins, 31, 12)
-        regfile[rd] = regfile[PC] + imm
+        regfile[rd] = regfile[PC] + sign_extend(imm << 12, 32)
         return True
     elif op == Opcode.ALUR:
         #R-type instruction
@@ -147,6 +146,12 @@ def step():
 
         if func3 == Func3.ADDI and func7 == 0b0100000: #SUB
             regfile[rd] = regfile[rs1] - regfile [rs2]
+        elif func3 == Func3.SRLI and func7 == 0b0100000: #SRA
+            shift = regfile[rs2] & 0x1F
+            sb = regfile[rs1] >> 31
+            out = regfile[rs1] >> decode(ins, 24, 20)
+            out |= (0xFFFFFFFF * sb) << (32 - shift)
+            regfile[rd] = out
         elif func3 == Func3.ADDI: #ADD otherwise
             regfile[rd] = regfile[rs1] + regfile [rs2]
         elif func3 == Func3.ORI:
@@ -162,7 +167,7 @@ def step():
         elif func3 == Func3.SLTI:
             regfile[rd] = int(regfile[rs1] < regfile [rs2])
         elif func3 == Func3.SLTIU:
-            regfile[rd] = int(regfile[rs1] < regfile [rs2])
+            regfile[rd] = int((regfile[rs1] & 0xFFFFFFFF) < regfile [rs2] & 0xFFFFFFFF)
         else:
             dump()
             raise Exception("Func3 error - Unknown func3 field")
@@ -172,14 +177,21 @@ def step():
         rd = decode(ins, 11, 7)
         rs1 = decode(ins, 19, 15)
         func3 = Func3(decode(ins, 14, 12))
+        func7 = decode(ins, 31, 25)
         imm = decode(ins, 31, 20)
         offset = sign_extend(imm, 12)
-        if func3 == Func3.ADDI:
+
+        if func3 == Func3.SRLI and func7 == 0b0100000: #SRAI
+            sb = regfile[rs1] >> 31
+            out = regfile[rs1] >> decode(ins, 24, 20)
+            out |= (0xFFFFFFFF * sb) << (32 - decode(ins, 24, 20))
+            regfile[rd] = out
+        elif func3 == Func3.ADDI:
             regfile[rd] = regfile[rs1] + offset
         elif func3 == Func3.SLLI:
-            regfile[rd] = regfile[rs1] << offset
+            regfile[rd] = regfile[rs1] << (offset & 0x1F)
         elif func3 == Func3.SRLI:
-            regfile[rd] = regfile[rs1] >> offset
+            regfile[rd] = regfile[rs1] >> (offset & 0x1F)
         elif func3 == Func3.ORI:
             regfile[rd] = regfile[rs1] | offset
         elif func3 == Func3.XORI:
