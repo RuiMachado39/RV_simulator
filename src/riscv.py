@@ -124,6 +124,9 @@ def step():
     ins = r32(regfile[PC])
     #instruction decode
     op = Opcode(decode(ins,6,0))
+    #next program counter
+    npc = regfile[PC] + 4
+
     if op == Opcode.JAL:
         #J-type instruction
         imm = decode(ins,31,12)
@@ -131,8 +134,7 @@ def step():
         offset = decode(imm, 32,31) << 20 | decode(imm, 19,12) << 12 | decode(imm, 21, 20) << 11 | decode(imm, 30, 21) << 1 
         offset = sign_extend(offset, 21)
         regfile[rd] = regfile[PC] + 4
-        regfile[PC] += offset
-        return True
+        npc = regfile[PC] + offset
     elif op == Opcode.JALR:
         #I-type instruction
         rd = decode(ins, 11,7)
@@ -140,11 +142,10 @@ def step():
         assert func3 == Func3.ADDI #Func3 field must be 0 on JALR instructions which is the ADDI/ADD code
         rs1 = decode(ins, 19, 15)
         imm = sign_extend(decode(ins, 31, 20), 12)
-        nv = regfile[PC] + 4 
-        regfile[PC] = (regfile[rs1] + imm) & 0xFFFFFFFE
-        regfile[rd] = nv
-        return True
+        npc = (regfile[rs1] + imm) & 0xFFFFFFFE
+        regfile[rd] = regfile[PC] + 4 
     elif op == Opcode.LUI:
+        #U-type instruction
         rd = decode(ins, 11, 7)
         imm = decode(ins, 31, 12)
         regfile[rd] = imm << 12
@@ -153,7 +154,6 @@ def step():
         rd = decode(ins, 11, 7)
         imm = decode(ins, 31, 12)
         regfile[rd] = regfile[PC] + sign_extend(imm << 12, 32)
-        return True
     elif op == Opcode.ALUR:
         #R-type instruction
         rd = decode(ins, 11, 7)
@@ -189,7 +189,6 @@ def step():
         else:
             dump()
             raise Exception("Func3 error - Unknown func3 field")
-        return True
     elif op == Opcode.ALUI:
         #I-type instruction
         rd = decode(ins, 11, 7)
@@ -223,8 +222,7 @@ def step():
         else:
             dump()
             raise Exception("Func3 error - Unknown func3 field")
-        regfile[PC] += 4
-        return True
+        npc = regfile[PC] + 4
     elif op == Opcode.BRANCH:
         #B-type instruction
         func3 = Func3(decode(ins, 14, 12))
@@ -234,28 +232,22 @@ def step():
         offset = sign_extend(imm, 13)
         if func3 == Func3.BEQ:
             if regfile[rs1] == regfile[rs2]:
-                regfile[PC] += offset
-                return True
+                npc = regfile[PC] + offset
         elif func3 == Func3.BNE:
             if regfile[rs1] != regfile[rs2]:
-                regfile[PC] += offset
-                return True
+                npc = regfile[PC] + offset
         elif func3 == Func3.BLT:
             if sign_extend(regfile[rs1], 32) < sign_extend(regfile[rs2], 32):
-                regfile[PC] += offset
-                return True
+                npc = regfile[PC] + offset
         elif func3 == Func3.BGE:
             if sign_extend(regfile[rs1], 32) >= sign_extend(regfile[rs2], 32):
-                regfile[PC] += offset
-                return True
+                npc = regfile[PC] + offset
         elif func3 == Func3.BLTU:
             if regfile[rs1] < regfile[rs2]:
-                regfile[PC] += offset
-                return True
+                npc = regfile[PC] + offset
         else:
             dump()
             raise Exception("Opcode error - Unknown opcode")
-        return True
     elif op == Opcode.LOAD:
         #I-type instruction
         rs1 = decode(ins, 19, 15)
@@ -287,7 +279,6 @@ def step():
             ws(addr, struct.pack("H",value&0xFFFF))
         elif width == Func3.SW:
             ws(addr, struct.pack("I",value))
-        return True
     elif op == Opcode.MISC:
         pass
     elif op == Opcode.SYSTEM:
@@ -299,14 +290,14 @@ def step():
             if regfile[3] > 1:
                 raise Exception("Test failed!!!") #TODO: implement the real function, this was just a place holder
         elif func3 == Func3.CSRRS:
-            regfile[rd] = regfile[rs1] #TODO: implement the real function, this was just a place holder
+            pass #TODO: implement the real function, this was just a place holder
         elif func3 == Func3.CSRRW:
-            regfile[rd] = regfile[rs1] #TODO: implement the real function, this was just a place holder
+            if csr == 3072:
+                return False
         elif func3 == Func3.CSRRWI:
-            regfile[rd] = regfile[rs1] #TODO: implement the real function, this was just a place holder
+            pass #TODO: implement the real function, this was just a place holder
         else:
             raise Exception("!CSR ERROR!")
-        return True
     else:
         dump()
         raise Exception("Opcode error - Unknown opcode")
@@ -318,7 +309,8 @@ def step():
     #instruction execute
     #memory access
     #write-back
-    return False
+    regfile[PC] = npc
+    return True
 
 
 
