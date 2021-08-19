@@ -69,6 +69,17 @@ class Func3(Enum):
     BLTU = 0b110
     BGEU = 0b111
 
+
+    LB = 0b000
+    LH = 0b001
+    LW = 0b010
+    LBU = 0b100
+    LHU = 0b101
+
+    SB = 0b000
+    SH = 0b001
+    SW = 0b010
+
     ECALL = 0b000
     CSRRW = 0b001
     CSRRS = 0b010
@@ -81,6 +92,13 @@ class Func3(Enum):
 def decode(ins, msb, lsb):
     return (ins >> lsb) & ((1 << (msb - lsb + 1))-1)
 
+
+
+def ws(addr, data):
+    global mem
+    #addr -= 0x80000000 #TODO: this depends on the compiler 
+    assert addr >= 0 and addr < len(mem)
+    mem = mem[:addr] + data + mem[addr+len(data):]
 
 def r32(addr):
     assert addr >= 0 and addr < len(mem)
@@ -123,7 +141,7 @@ def step():
         rs1 = decode(ins, 19, 15)
         imm = sign_extend(decode(ins, 31, 20), 12)
         nv = regfile[PC] + 4 
-        regfile[PC] = regfile[rs1] + imm
+        regfile[PC] = (regfile[rs1] + imm) & 0xFFFFFFFE
         regfile[rd] = nv
         return True
     elif op == Opcode.LUI:
@@ -245,7 +263,16 @@ def step():
         width = decode(ins, 14, 12)
         offset = sign_extend(decode(ins, 31, 20), 12)
         addr = regfile[rs1] + offset
-        regfile[rd] = mem[addr]
+        if width == Func3.LB:
+            regfile[rd] = sign_extend(r32(addr)&0xFF, 8)
+        elif width == Func3.LH:
+            regfile[rd] = sign_extend(r32(addr)&0xFFFF, 16)
+        elif width == Func3.LW:
+            regfile[rd] = r32(addr)
+        elif width == Func3.LBU:
+            regfile[rd] = r32(addr)&0xFF
+        elif width == Func3.LHU:
+            regfile[rd] = r32(addr)&0xFFFF
     elif op == Opcode.STORE:
         #S-type instruction
         rs1 = decode(ins, 19, 15)
@@ -254,7 +281,12 @@ def step():
         offset = sign_extend(decode(ins, 31, 25) << 5 | decode(ins, 11, 7), 12)
         addr = regfile[rs1] + offset
         value = regfile[rs2]
-        mem[addr] = value
+        if width == Func3.SB:
+            ws(addr, struct.pack("B",value&0xFF))
+        elif width == Func3.SH:
+            ws(addr, struct.pack("H",value&0xFFFF))
+        elif width == Func3.SW:
+            ws(addr, struct.pack("I",value))
         return True
     elif op == Opcode.MISC:
         pass
@@ -301,7 +333,7 @@ if __name__ == "__main__":
     text = elf.get_section_by_name('.text.init').data()
     mem = text + mem[len(text):]
     regfile[PC] = 0x00
-    #TO DO: read code from hex file and give user the option to select the format
+    #TODO: read code from hex file and give user the option to select the format
     while step():
         pass    
     
